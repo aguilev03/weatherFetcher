@@ -11,6 +11,10 @@ function ask(question) {
     rl.question(question, resolve);
   });
 }
+
+const fs = require("fs");
+const path = require("path");
+
 // find coordinates
 async function getCoords(zipcode) {
   try {
@@ -56,20 +60,90 @@ async function weatherFetch(coords) {
   }
 }
 
-// menu
+function celsiusConv(temp) {
+  return (temp - 32) / (9 / 5);
+}
+
+// save to json file
+function writeJson(wdata) {
+  //let now = new Date();
+  //let timestamp = now.toISOString().replace(/[:]/g, "-").replace(/\..+/, "");
+
+  let filename = `saveZip_.json`;
+
+  fs.writeFile(filename, JSON.stringify(wdata, null, 2), (err) => {
+    if (err) {
+      console.error("Error saving file:", err);
+    } else {
+      //console.log(`file saved as ${filename}`);
+    }
+  });
+}
+
+// load json files
+let allZips = [];
+
+function readSaves() {
+  return new Promise((resolve, reject) => {
+    fs.readdir(".", (err, files) => {
+      if (err) {
+        return console.error("Failed to read directory:", err);
+      }
+
+      let jsonFiles = files.filter(
+        (file) => file.startsWith("saveZip_") && file.endsWith(".json")
+      );
+      let combineZips = [];
+      jsonFiles.forEach((file) => {
+        try {
+          let data = fs.readFileSync(file, "utf8");
+          let zips = JSON.parse(data);
+
+          // merge zip codes into master array
+          combineZips.push(...zips);
+        } catch (err) {
+          console.error(`Error reading/parsing ${file}:`, err);
+        }
+      });
+      resolve(combineZips);
+      //console.log("Loaded Zip codes");
+    });
+  });
+}
+/* Main menu loop */
+
 async function mainMenu() {
+  let allZips = [];
   let exit = false;
+  // main loop
 
   while (!exit) {
+    allZips = await readSaves();
     console.clear();
     console.log("Welcome to Weather Fetcher");
-    console.log("1. Display weather by Zipcode\n2. Exit");
+
+    /* display Menu */
+    console.log("*** Previous Zips ***");
+
+    // List zip codes used previously
+    for (let i = 0; i < allZips.length; i++) {
+      console.log(`${i + 1}. ${allZips[i]}\t`);
+    }
+
+    /* display Menu */
+    console.log("\n1. Display weather by Zipcode\n2. Exit\n");
+
+    // Menu Commands
     let menuChoice = await ask("Please choose a menu item ");
+
+    // search by Zip code branch
     if (menuChoice == "1") {
       let zipcode = await ask("Please type your zip code (5 digit) ");
       //console.log(zipcode);
       let coords = await getCoords(zipcode);
       // console.log(coords);
+
+      // if theres no data in coords have user try again if not continue
       if (!coords) {
         console.log("Invalid Zip code, please try again");
         await ask("Press Enter to continue");
@@ -77,12 +151,39 @@ async function mainMenu() {
         let currWeath = await weatherFetch(coords);
         // console.log(currWeath);
         console.clear();
+
+        let temp = currWeath.current.temperature_2m;
+        let tempDisp = currWeath.current_units.temperature_2m;
+        formatTemp = await ask("Celsius or Farenheit (C/F)  ");
+        if (formatTemp.toLowerCase() === "c") {
+          ftemp = temp = celsiusConv(
+            parseFloat(currWeath.current.temperature_2m)
+          );
+          tempDisp = "°C";
+        }
+        //display current weather for zip code
         console.log(
-          `Current weather in ${coords.city}, ${coords.state} is ${currWeath.current.temperature_2m} ${currWeath.current_units.temperature_2m}`
+          `Current weather in ${coords.city}, ${coords.state} is ${temp.toFixed(
+            1
+          )} ${tempDisp}`
         );
-        console.log("Exiting...");
-        exit = true;
+        allZips.push(zipcode);
+        await writeJson(allZips);
+
+        // ask to continue and save zip for history or quit the program
+        let startOver = await ask("Would you like to check again? Y/n ");
+        if (
+          startOver.toLowerCase() === "n" ||
+          startOver.toLowerCase() === "no"
+        ) {
+          console.log("Exiting...");
+          exit = true;
+        } else {
+        }
       }
+    } else if (menuChoice === "2") {
+      console.log("Exiting...");
+      exit = true;
     } else {
       console.log("Invalid choice please try again");
       await ask("press Enter to continue ...");
